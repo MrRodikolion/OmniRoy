@@ -16,4 +16,5 @@ void loop() {
 int myFunction(int x, int y) {
   return x + y;
   int helloworld();
+  // What happens if I put code after the return statement? heeloworld() will never be called because the function will exit immediately after the return statement. Any code placed after a return statement in a function will not be executed.
 } 
