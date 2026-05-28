@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <math.h>
 #include "avr/interrupt.h"
 #include "avr/io.h"
 
@@ -6,11 +7,16 @@ volatile byte TPIN[] = {12, 11,
                         8, 9,
                         7, 5,
                         4, 3}; // B C D A
-volatile byte pinD[] = {100, 0,
-                        0, 100,
-                        0, 100,
-                        100, 0};
+volatile byte pinD[] = {0, 0,
+                        0, 0,
+                        0, 0,
+                        0, 0};
 volatile byte pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+float x, y;
+float angleR;
+
+void moveMotor(int angle, int v);
 
 void setup()
 {
@@ -18,6 +24,8 @@ void setup()
   {
     pinMode(TPIN[i], OUTPUT);
   }
+
+  Serial.begin(1150200);
 
   cli();
   TCCR2A = 0;
@@ -27,27 +35,57 @@ void setup()
   TIMSK2 |= (1 << OCIE2A);
 
   sei();
-
 }
 
 void loop()
 {
-  for (int j = 0; j < 255; j++)
+  if (Serial.available() > 0)
   {
-    for (int i = 0; i < 8; i += 2)
+    String data = Serial.readStringUntil('\n');
+    
+    int commaIndex = data.indexOf(',');
+    if (commaIndex > 0)
     {
-      pinD[i]=j;
+      x = data.substring(0, commaIndex).toFloat();
+      y = data.substring(commaIndex + 1).toFloat();
+      
+      float baseAngle = 0;
+      if (x == 0 && y == 0)
+      {
+        angleR = 0;
+      }
+      else if (x == 0)
+      {
+        angleR = (y > 0) ? PI / 2 : 3 * PI / 2;
+      }
+      else if (y == 0)
+      {
+        angleR = (x > 0) ? 0 : PI;
+      }
+      else
+      {
+        baseAngle = atan(fabs(y) / fabs(x));
+        if (x > 0 && y > 0)
+        {
+          angleR = baseAngle;
+        }
+        else if (x < 0 && y > 0)
+        {
+          angleR = PI - baseAngle;
+        }
+        else if (x < 0 && y < 0)
+        {
+          angleR = PI + baseAngle;
+        }
+        else
+        {
+          angleR = 2 * PI - baseAngle;
+        }
+      }
     }
-    delay(10);
   }
-  for (int j = 255; j > 0; j--)
-  {
-    for (int i = 0; i < 8; i += 2)
-    {
-      pinD[i]=j;
-    }
-    delay(10);
-  }
+
+  moveMotor(angleR, 100);
 }
 
 ISR(TIMER2_COMPA_vect)
@@ -66,9 +104,9 @@ ISR(TIMER2_COMPA_vect)
   }
 }
 
-void moveMotor(int angle, int v, int n)
+void moveMotor(int angle, int v)
 {
-   
+  int n = 0;
   if (angle > 0 || angle < PI / 2)
   {
     n = tan(angle - PI / 4) * v;
