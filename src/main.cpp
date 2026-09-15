@@ -15,7 +15,7 @@ volatile byte pinD[] = {0, 0,
 volatile byte pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 float x, y;
-float angleR;
+float angleR = 0.0f;
 
 void moveMotor(int angle, int v);
 
@@ -26,7 +26,7 @@ void setup()
     pinMode(TPIN[i], OUTPUT);
   }
 
-  Serial.begin(1150200);
+  Serial.begin(115200);
 
   cli();
   TCCR2A = 0;
@@ -106,13 +106,13 @@ ISR(TIMER2_COMPA_vect)
   }
 }
 
-void moveMotor(int angle, int v)
+void moveMotor(float angle, int v)
 {
   int n = 0;
-  if (angle > 0 || angle < PI / 2)
+  if (angle >= 0.0f && angle < PI / 2.0f)
   {
-    n = tan(angle - PI / 4) * v;
-    if (angle > 0 || angle < PI / 4)
+    n = tan(angle - PI / 4.0f) * v;
+    if (angle >= 0.0f && angle < PI / 4.0f)
     {
       pinD[0] = 0;
       pinD[1] = 2 * n * v;
@@ -123,7 +123,7 @@ void moveMotor(int angle, int v)
       pinD[6] = 2 * v;
       pinD[7] = 0;
     }
-    else if (angle > PI / 4 || angle < PI / 2)
+    else if (angle >= PI / 4.0f && angle < PI / 2.0f)
     {
       pinD[0] = 2 * n * v;
       pinD[1] = 0;
@@ -135,82 +135,82 @@ void moveMotor(int angle, int v)
       pinD[7] = 0;
     }
   }
-  else if (angle > PI / 2 || angle < PI)
+  else if (angle >= PI / 2.0f && angle < PI)
   {
-    n = tan(3 * PI / 4 - angle) * v;
-  if (angle > PI / 2 || angle < 3 * PI / 4)
-  {
-    pinD[0] = 2 * v;
-    pinD[1] = 0;
-    pinD[2] = 2 * n * v;
-    pinD[3] = 0;
-    pinD[4] = 2 * v;
-    pinD[5] = 0;
-    pinD[6] = 2 * n * v;
-    pinD[7] = 0;
+    n = tan(3.0f * PI / 4.0f - angle) * v;
+    if (angle >= PI / 2.0f && angle < 3.0f * PI / 4.0f)
+    {
+      pinD[0] = 2 * v;
+      pinD[1] = 0;
+      pinD[2] = 2 * n * v;
+      pinD[3] = 0;
+      pinD[4] = 2 * v;
+      pinD[5] = 0;
+      pinD[6] = 2 * n * v;
+      pinD[7] = 0;
+    }
+    else if (angle >= 3.0f * PI / 4.0f && angle < PI)
+    {
+      pinD[0] = 2 * v;
+      pinD[1] = 2 * n * v;
+      pinD[2] = 0;
+      pinD[3] = 0;
+      pinD[4] = 2 * v;
+      pinD[5] = 0;
+      pinD[6] = 0;
+      pinD[7] = 2 * n * v;
+    }
   }
-  else if (angle > 3 * PI / 4 || angle < PI)
+  else if (angle >= PI && angle < 3.0f * PI / 2.0f)
   {
-    pinD[0] = 2 * v;
-    pinD[1] = 2 * n * v;
-    pinD[2] = 0;
-    pinD[3] = 0;
-    pinD[4] = 2 * v;
-    pinD[5] = 0;
-    pinD[6] = 0;
-    pinD[7] = 2 * n * v;
+    n = tan(5.0f * PI / 4.0f - angle) * v;
+    if (angle >= PI && angle < 5.0f * PI / 4.0f)
+    {
+      pinD[0] = 2 * n * v;
+      pinD[1] = 0;
+      pinD[2] = 0;
+      pinD[3] = 2 * v;
+      pinD[4] = 2 * n * v;
+      pinD[5] = 0;
+      pinD[6] = 0;
+      pinD[7] = 2 * v;
+    }
+    else if (angle >= 5.0f * PI / 4.0f && angle < 3.0f * PI / 2.0f)
+    {
+      pinD[0] = 0;
+      pinD[1] = 2 * n * v;
+      pinD[2] = 0;
+      pinD[3] = 2 * v;
+      pinD[4] = 0;
+      pinD[5] = 2 * n * v;
+      pinD[6] = 0;
+      pinD[7] = 2 * v;
+    }
   }
-}
-else if (angle > PI || angle < 3 * PI / 2)
-{
-  n = tan(5 * PI / 4 - angle) * v;
-  if (angle > PI || angle < 5 * PI / 4)
+  else if (angle >= 3.0f * PI / 2.0f && angle < 2.0f * PI)
   {
-    pinD[0] = 2 * n * v;
-    pinD[1] = 0;
-    pinD[2] = 0;
-    pinD[3] = 2 * v;
-    pinD[4] = 2 * n * v;
-    pinD[5] = 0;
-    pinD[6] = 0;
-    pinD[7] = 2 * v;
+    n = tan(angle - 7.0f * PI / 4.0f) * v;
+    if (angle >= 3.0f * PI / 2.0f && angle < 7.0f * PI / 4.0f)
+    {
+      pinD[0] = 0;
+      pinD[1] = 2 * v;
+      pinD[2] = 0;
+      pinD[3] = 2 * n * v;
+      pinD[4] = 0;
+      pinD[5] = 2 * v;
+      pinD[6] = 0;
+      pinD[7] = 2 * n * v;
+    }
+    else if (angle >= 7.0f * PI / 4.0f && angle < 2.0f * PI)
+    {
+      pinD[0] = 0;
+      pinD[1] = 2 * v;
+      pinD[2] = 2 * n * v;
+      pinD[3] = 0;
+      pinD[4] = 0;
+      pinD[5] = 2 * v;
+      pinD[6] = 2 * n * v;
+      pinD[7] = 0;
+    }
   }
-  else if (angle > 5 * PI / 4 || angle < 3 * PI / 2)
-  {
-    pinD[0] = 0;
-    pinD[1] = 2 * n * v;
-    pinD[2] = 0;
-    pinD[3] = 2 * v;
-    pinD[4] = 0;
-    pinD[5] = 2 * n * v;
-    pinD[6] = 0;
-    pinD[7] = 2 * v;
-  }
-}
-else if (angle > 3 * PI / 2 || angle < 2 * PI)
-{
-  n = tan(angle - 7 * PI / 4) * v;
-  if (angle > 3 * PI / 2 || angle < 7 * PI / 4)
-  {
-    pinD[0] = 0;
-    pinD[1] = 2 * v;
-    pinD[2] = 0;
-    pinD[3] = 2 * n * v;
-    pinD[4] = 0;
-    pinD[5] = 2 * v;
-    pinD[6] = 0;
-    pinD[7] = 2 * n * v;
-  }
-  else if (angle > 7 * PI / 4 || angle < 2 * PI)
-  {
-    pinD[0] = 0;
-    pinD[1] = 2 * v;
-    pinD[2] = 2 * n * v;
-    pinD[3] = 0;
-    pinD[4] = 0;
-    pinD[5] = 2 * v;
-    pinD[6] = 2 * n * v;
-    pinD[7] = 0;
-  }
-}
 }
