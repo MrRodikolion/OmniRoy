@@ -14,10 +14,7 @@ volatile byte pinD[] = {0, 0,
                         0, 0};
 volatile byte pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-float x, y;
-float angleR = 0.0f;
-
-void moveMotor(int angle, int v);
+void setMotorSpeed(byte motor, int speed);
 
 void setup()
 {
@@ -43,51 +40,19 @@ void loop()
   if (Serial.available() > 0)
   {
     String data = Serial.readStringUntil('\n');
-    
+
     int commaIndex = data.indexOf(',');
     if (commaIndex > 0)
     {
-      x = data.substring(0, commaIndex).toFloat();
-      y = data.substring(commaIndex + 1).toFloat();
-      
-      float baseAngle = 0;
-      if (x == 0 && y == 0)
+      int motorNumber = data.substring(0, commaIndex).toInt();
+      int speed = data.substring(commaIndex + 1).toInt();
+
+      if (motorNumber >= 1 && motorNumber <= 4)
       {
-        angleR = 0;
-      }
-      else if (x == 0)
-      {
-        angleR = (y > 0) ? PI / 2 : 3 * PI / 2;
-      }
-      else if (y == 0)
-      {
-        angleR = (x > 0) ? 0 : PI;
-      }
-      else
-      {
-        baseAngle = atan(fabs(y) / fabs(x));
-        if (x > 0 && y > 0)
-        {
-          angleR = baseAngle;
-        }
-        else if (x < 0 && y > 0)
-        {
-          angleR = PI - baseAngle;
-        }
-        else if (x < 0 && y < 0)
-        {
-          angleR = PI + baseAngle;
-        }
-        else
-        {
-          angleR = 2 * PI - baseAngle;
-        }
+        setMotorSpeed(motorNumber - 1, speed);
       }
     }
   }
-
-  moveMotor(angleR, 100);
-  delay(100);
 }
 
 ISR(TIMER2_COMPA_vect)
@@ -106,111 +71,38 @@ ISR(TIMER2_COMPA_vect)
   }
 }
 
-void moveMotor(float angle, int v)
+void setMotorSpeed(byte motor, int speed)
 {
-  int n = 0;
-  if (angle >= 0.0f && angle < PI / 2.0f)
+  if (motor >= 4)
   {
-    n = tan(angle - PI / 4.0f) * v;
-    if (angle >= 0.0f && angle < PI / 4.0f)
-    {
-      pinD[0] = 0;
-      pinD[1] = 2 * n * v;
-      pinD[2] = 2 * v;
-      pinD[3] = 0;
-      pinD[4] = 0;
-      pinD[5] = 2 * n * v;
-      pinD[6] = 2 * v;
-      pinD[7] = 0;
-    }
-    else if (angle >= PI / 4.0f && angle < PI / 2.0f)
-    {
-      pinD[0] = 2 * n * v;
-      pinD[1] = 0;
-      pinD[2] = 2 * v;
-      pinD[3] = 0;
-      pinD[4] = 2 * n * v;
-      pinD[5] = 0;
-      pinD[6] = 2 * v;
-      pinD[7] = 0;
-    }
+    return;
   }
-  else if (angle >= PI / 2.0f && angle < PI)
+
+  speed = constrain(speed, -255, 255);
+
+  byte forwardChannel = motor * 2;
+  byte reverseChannel = forwardChannel + 1;
+
+  noInterrupts();
+
+  if (speed > 0)
   {
-    n = tan(3.0f * PI / 4.0f - angle) * v;
-    if (angle >= PI / 2.0f && angle < 3.0f * PI / 4.0f)
-    {
-      pinD[0] = 2 * v;
-      pinD[1] = 0;
-      pinD[2] = 2 * n * v;
-      pinD[3] = 0;
-      pinD[4] = 2 * v;
-      pinD[5] = 0;
-      pinD[6] = 2 * n * v;
-      pinD[7] = 0;
-    }
-    else if (angle >= 3.0f * PI / 4.0f && angle < PI)
-    {
-      pinD[0] = 2 * v;
-      pinD[1] = 2 * n * v;
-      pinD[2] = 0;
-      pinD[3] = 0;
-      pinD[4] = 2 * v;
-      pinD[5] = 0;
-      pinD[6] = 0;
-      pinD[7] = 2 * n * v;
-    }
+    pinD[forwardChannel] = speed;
+    pinD[reverseChannel] = 0;
   }
-  else if (angle >= PI && angle < 3.0f * PI / 2.0f)
+  else if (speed < 0)
   {
-    n = tan(5.0f * PI / 4.0f - angle) * v;
-    if (angle >= PI && angle < 5.0f * PI / 4.0f)
-    {
-      pinD[0] = 2 * n * v;
-      pinD[1] = 0;
-      pinD[2] = 0;
-      pinD[3] = 2 * v;
-      pinD[4] = 2 * n * v;
-      pinD[5] = 0;
-      pinD[6] = 0;
-      pinD[7] = 2 * v;
-    }
-    else if (angle >= 5.0f * PI / 4.0f && angle < 3.0f * PI / 2.0f)
-    {
-      pinD[0] = 0;
-      pinD[1] = 2 * n * v;
-      pinD[2] = 0;
-      pinD[3] = 2 * v;
-      pinD[4] = 0;
-      pinD[5] = 2 * n * v;
-      pinD[6] = 0;
-      pinD[7] = 2 * v;
-    }
+    pinD[forwardChannel] = 0;
+    pinD[reverseChannel] = -speed;
   }
-  else if (angle >= 3.0f * PI / 2.0f && angle < 2.0f * PI)
+  else
   {
-    n = tan(angle - 7.0f * PI / 4.0f) * v;
-    if (angle >= 3.0f * PI / 2.0f && angle < 7.0f * PI / 4.0f)
-    {
-      pinD[0] = 0;
-      pinD[1] = 2 * v;
-      pinD[2] = 0;
-      pinD[3] = 2 * n * v;
-      pinD[4] = 0;
-      pinD[5] = 2 * v;
-      pinD[6] = 0;
-      pinD[7] = 2 * n * v;
-    }
-    else if (angle >= 7.0f * PI / 4.0f && angle < 2.0f * PI)
-    {
-      pinD[0] = 0;
-      pinD[1] = 2 * v;
-      pinD[2] = 2 * n * v;
-      pinD[3] = 0;
-      pinD[4] = 0;
-      pinD[5] = 2 * v;
-      pinD[6] = 2 * n * v;
-      pinD[7] = 0;
-    }
+    pinD[forwardChannel] = 0;
+    pinD[reverseChannel] = 0;
   }
+
+  pinC[forwardChannel] = 0;
+  pinC[reverseChannel] = 0;
+
+  interrupts();
 }
