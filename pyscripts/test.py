@@ -3,7 +3,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
-robot = None
+robot = serial.Serial('COM9', 115200, timeout=1)
 time.sleep(2)
 
 window = tk.Tk()

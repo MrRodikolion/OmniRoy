@@ -29,7 +29,9 @@ void setup()
   TCCR2A = 0;
   TCCR2B = 0;
 
-  TCCR2B = 0 << CS22 | 0 << CS21 | 1 << CS20;
+  TCCR2A |= (1 << WGM21);     // CTC mode
+  TCCR2B |= (1 << CS22);      // prescaler 64
+  OCR2A = 249;                // 1 kHz interrupt at 16 MHz: 16e6 / (64 * (249 + 1))
   TIMSK2 |= (1 << OCIE2A);
 
   sei();
@@ -37,19 +39,47 @@ void setup()
 
 void loop()
 {
-  if (Serial.available() > 0)
+  static char data[32];
+  static byte index = 0;
+
+  while (Serial.available() > 0)
   {
-    String data = Serial.readStringUntil('\n');
+    char ch = Serial.read();
 
-    int commaIndex = data.indexOf(',');
-    if (commaIndex > 0)
+    if (ch == '\n' || ch == '\r')
     {
-      int motorNumber = data.substring(0, commaIndex).toInt();
-      int speed = data.substring(commaIndex + 1).toInt();
-
-      if (motorNumber >= 1 && motorNumber <= 4)
+      if (index > 0)
       {
-        setMotorSpeed(motorNumber - 1, speed);
+        data[index] = '\0';
+
+        char *comma = strchr(data, ',');
+        if (comma != nullptr)
+        {
+          *comma = '\0';
+          char *motorStr = data;
+          char *speedStr = comma + 1;
+
+          int motorNumber = atoi(motorStr);
+          int speed = atoi(speedStr);
+
+          if (motorNumber >= 1 && motorNumber <= 4)
+          {
+            setMotorSpeed(motorNumber - 1, speed);
+          }
+
+          Serial.print(motorNumber);
+          Serial.print(',');
+          Serial.println(speed);
+        }
+
+        index = 0;
+      }
+    }
+    else
+    {
+      if (index < sizeof(data) - 1)
+      {
+        data[index++] = ch;
       }
     }
   }
