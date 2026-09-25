@@ -3,18 +3,27 @@
 #include "avr/interrupt.h"
 #include "avr/io.h"
 
-volatile byte TPIN[] = {7, 5, 
-                        4, 3,
-                        12, 11,
-                        8, 9,
-                        }; // B C D A - > D A B C 
+volatile byte TPIN[] = {
+    7,
+    5,
+    4,
+    3,
+    12,
+    11,
+    8,
+    9,
+}; // B C D A - > D A B C
 volatile byte pinD[] = {0, 0,
                         0, 0,
                         0, 0,
                         0, 0};
 volatile byte pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
 
+const float h = 0.0435f;
+
 void setMotorSpeed(byte motor, int speed);
+void setMotorSpeeds(const int speeds[4]);
+void driveByAngle(float V_angle, float speed);
 
 void setup()
 {
@@ -29,9 +38,9 @@ void setup()
   TCCR2A = 0;
   TCCR2B = 0;
 
-  TCCR2A |= (1 << WGM21);     // CTC mode
-  TCCR2B |= (1 << CS22);      // prescaler 64
-  OCR2A = 249;                // 1 kHz interrupt at 16 MHz: 16e6 / (64 * (249 + 1))
+  TCCR2A |= (1 << WGM21); // CTC mode
+  TCCR2B |= (1 << CS22);  // prescaler 64
+  OCR2A = 249;            // 1 kHz interrupt at 16 MHz: 16e6 / (64 * (249 + 1))
   TIMSK2 |= (1 << OCIE2A);
 
   sei();
@@ -39,49 +48,13 @@ void setup()
 
 void loop()
 {
-  static char data[32];
-  static byte index = 0;
+  static unsigned long lastUpdate = 0;
+  const unsigned long now = millis();
 
-  while (Serial.available() > 0)
+  if (now - lastUpdate >= 20)
   {
-    char ch = Serial.read();
-
-    if (ch == '\n' || ch == '\r')
-    {
-      if (index > 0)
-      {
-        data[index] = '\0';
-
-        char *comma = strchr(data, ',');
-        if (comma != nullptr)
-        {
-          *comma = '\0';
-          char *motorStr = data;
-          char *speedStr = comma + 1;
-
-          int motorNumber = atoi(motorStr);
-          int speed = atoi(speedStr);
-
-          if (motorNumber >= 1 && motorNumber <= 4)
-          {
-            setMotorSpeed(motorNumber - 1, speed);
-          }
-
-          Serial.print(motorNumber);
-          Serial.print(',');
-          Serial.println(speed);
-        }
-
-        index = 0;
-      }
-    }
-    else
-    {
-      if (index < sizeof(data) - 1)
-      {
-        data[index++] = ch;
-      }
-    }
+    lastUpdate = now;
+    driveByAngle(radians(45), 0.5);
   }
 }
 
@@ -131,8 +104,62 @@ void setMotorSpeed(byte motor, int speed)
     pinD[reverseChannel] = 0;
   }
 
-  pinC[forwardChannel] = 0;
-  pinC[reverseChannel] = 0;
+  interrupts();
+}
+
+void setMotorSpeeds(const int speeds[4])
+{
+  noInterrupts();
+
+  for (byte motor = 0; motor < 4; motor++)
+  {
+    const int speed = constrain(speeds[motor], -255, 255);
+    const byte forwardChannel = motor * 2;
+    const byte reverseChannel = forwardChannel + 1;
+
+    if (speed > 0)
+    {
+      pinD[forwardChannel] = speed;
+      pinD[reverseChannel] = 0;
+    }
+    else if (speed < 0)
+    {
+      pinD[forwardChannel] = 0;
+      pinD[reverseChannel] = -speed;
+    }
+    else
+    {
+      pinD[forwardChannel] = 0;
+      pinD[reverseChannel] = 0;
+    }
+  }
 
   interrupts();
+}
+
+const float MAX_PSI = 20.0f;
+int rad2PWM(float psi)
+{
+  float ratio = psi / MAX_PSI;
+  int pwm = round(ratio * 255);
+
+  if (pwm > 255) return 255;
+  if (pwm < -255) return -255;
+  return pwm;
+}
+
+void driveByAngle(float V_angle, float speed)
+{
+  float Vx = speed * cos(V_angle);
+  float Vy = speed * sin(V_angle);
+
+  float psi_13 = (Vx - Vy) / h;
+  float psi_24 = -(Vx + Vy) / h;
+
+  const int motorSpeeds[4] = {
+      rad2PWM(psi_13),
+      rad2PWM(psi_24),
+      rad2PWM(psi_13),
+      rad2PWM(psi_24)};
+  setMotorSpeeds(motorSpeeds);
 }
