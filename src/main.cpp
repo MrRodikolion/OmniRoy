@@ -3,33 +3,64 @@
 #include "avr/interrupt.h"
 #include "avr/io.h"
 
-volatile byte TPIN[] = {
-    7,
-    5,
-    4,
-    3,
-    12,
-    11,
-    8,
-    9,
-}; // B C D A - > D A B C
-volatile byte pinD[] = {0, 0,
-                        0, 0,
-                        0, 0,
-                        0, 0};
-volatile byte pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
+// TODO
+/*
+Калибровочные коэфициенты для моторов и откалибровать мотры
 
-const float h = 0.0435f;
+*/
+
+constexpr uint8_t TPIN[] = {7, 5,
+                            4, 3,
+                            12, 11,
+                            8, 9}; // D A B C
+
+constexpr float h = 0.0435f;
+constexpr float MAX_PSI = 20.0f;
+constexpr uint16_t MOTOR_UPDATE_MS = 10U;
+constexpr uint16_t PWM_TIMER_COMPARE = 15U;
+constexpr uint16_t PWM_TIMER_PRESCALER = 64U;
+constexpr uint16_t PWM_MAX_VALUE = 255U;
+
+volatile uint8_t pinD[] = {0, 0,
+                           0, 0,
+                           0, 0,
+                           0, 0};
+volatile uint8_t pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+float speed = 0.0f;
+float angle = 90.0f;
 
 void setMotorSpeed(byte motor, int speed);
 void setMotorSpeeds(const int speeds[4]);
 void driveByAngle(float V_angle, float speed);
 
+static inline void setPinFast(uint8_t pin, bool level)
+{
+  const uint8_t port = digitalPinToPort(pin);
+  if (port == NOT_A_PIN)
+  {
+    return;
+  }
+
+  volatile uint8_t *out = portOutputRegister(port);
+  const uint8_t mask = digitalPinToBitMask(pin);
+
+  if (level)
+  {
+    *out |= mask;
+  }
+  else
+  {
+    *out &= static_cast<uint8_t>(~mask);
+  }
+}
+
 void setup()
 {
-  for (int i = 0; i < 8; i++)
+  for (uint8_t i = 0; i < 8; ++i)
   {
     pinMode(TPIN[i], OUTPUT);
+    digitalWrite(TPIN[i], LOW);
   }
 
   Serial.begin(115200);
@@ -38,9 +69,9 @@ void setup()
   TCCR2A = 0;
   TCCR2B = 0;
 
-  TCCR2A |= (1 << WGM21); // CTC mode
-  TCCR2B |= (1 << CS22);  // prescaler 64
-  OCR2A = 249;            // 1 kHz interrupt at 16 MHz: 16e6 / (64 * (249 + 1))
+  TCCR2A |= (1 << WGM21);    // CTC mode
+  TCCR2B |= (1 << CS22);     // prescaler 64
+  OCR2A = PWM_TIMER_COMPARE; // ~15.6 kHz ISR: 16e6 / (64 * (15 + 1))
   TIMSK2 |= (1 << OCIE2A);
 
   sei();
@@ -51,30 +82,66 @@ void loop()
   static unsigned long lastUpdate = 0;
   const unsigned long now = millis();
 
-  if (now - lastUpdate >= 20)
+  if (now - lastUpdate >= MOTOR_UPDATE_MS)
   {
     lastUpdate = now;
-    driveByAngle(radians(45), 0.5);
+    driveByAngle(radians(angle), speed);
+  }
+
+  static char data[32];
+  static byte index = 0;
+
+  while (Serial.available() > 0)
+  {
+    char ch = Serial.read();
+
+    if (ch == '\n' || ch == '\r')
+    {
+      if (index > 0)
+      {
+        data[index] = '\0';
+
+        char *comma = strchr(data, ',');
+        if (comma != nullptr)
+        {
+          *comma = '\0';
+          char *angleStr = data;
+          char *speedStr = comma + 1;
+
+          angle = atof(angleStr);
+          speed = atof(speedStr);
+        }
+
+        index = 0;
+      }
+    }
+    else
+    {
+      if (index < sizeof(data) - 1)
+      {
+        data[index++] = ch;
+      }
+    }
   }
 }
 
 ISR(TIMER2_COMPA_vect)
 {
-  for (int i = 0; i < 8; i++)
+  for (uint8_t i = 0; i < 8; ++i)
   {
     if (pinC[i] == 0 && pinD[i] > 0)
     {
-      digitalWrite(TPIN[i], HIGH);
+      setPinFast(TPIN[i], HIGH);
     }
     if (pinC[i] == pinD[i])
     {
-      digitalWrite(TPIN[i], LOW);
+      setPinFast(TPIN[i], LOW);
     }
     pinC[i]++;
   }
 }
 
-void setMotorSpeed(byte motor, int speed)
+void setMotorSpeed(uint8_t motor, int speed)
 {
   if (motor >= 4)
   {
@@ -83,8 +150,8 @@ void setMotorSpeed(byte motor, int speed)
 
   speed = constrain(speed, -255, 255);
 
-  byte forwardChannel = motor * 2;
-  byte reverseChannel = forwardChannel + 1;
+  const uint8_t forwardChannel = motor * 2;
+  const uint8_t reverseChannel = forwardChannel + 1;
 
   noInterrupts();
 
@@ -96,7 +163,7 @@ void setMotorSpeed(byte motor, int speed)
   else if (speed < 0)
   {
     pinD[forwardChannel] = 0;
-    pinD[reverseChannel] = -speed;
+    pinD[reverseChannel] = static_cast<uint8_t>(-speed);
   }
   else
   {
@@ -111,21 +178,21 @@ void setMotorSpeeds(const int speeds[4])
 {
   noInterrupts();
 
-  for (byte motor = 0; motor < 4; motor++)
+  for (uint8_t motor = 0; motor < 4; ++motor)
   {
-    const int speed = constrain(speeds[motor], -255, 255);
-    const byte forwardChannel = motor * 2;
-    const byte reverseChannel = forwardChannel + 1;
+    const int value = constrain(speeds[motor], -255, 255);
+    const uint8_t forwardChannel = motor * 2;
+    const uint8_t reverseChannel = forwardChannel + 1;
 
-    if (speed > 0)
+    if (value > 0)
     {
-      pinD[forwardChannel] = speed;
+      pinD[forwardChannel] = value;
       pinD[reverseChannel] = 0;
     }
-    else if (speed < 0)
+    else if (value < 0)
     {
       pinD[forwardChannel] = 0;
-      pinD[reverseChannel] = -speed;
+      pinD[reverseChannel] = static_cast<uint8_t>(-value);
     }
     else
     {
@@ -137,29 +204,31 @@ void setMotorSpeeds(const int speeds[4])
   interrupts();
 }
 
-const float MAX_PSI = 20.0f;
-int rad2PWM(float psi)
+static inline int rad2PWM(float psi)
 {
-  float ratio = psi / MAX_PSI;
-  int pwm = round(ratio * 255);
+  const float ratio = psi / MAX_PSI;
+  int pwm = static_cast<int>(round(ratio * static_cast<float>(PWM_MAX_VALUE)));
 
-  if (pwm > 255) return 255;
-  if (pwm < -255) return -255;
+  if (pwm > static_cast<int>(PWM_MAX_VALUE))
+    return static_cast<int>(PWM_MAX_VALUE);
+  if (pwm < -static_cast<int>(PWM_MAX_VALUE))
+    return -static_cast<int>(PWM_MAX_VALUE);
   return pwm;
 }
 
 void driveByAngle(float V_angle, float speed)
 {
-  float Vx = speed * cos(V_angle);
-  float Vy = speed * sin(V_angle);
+  const float Vx = speed * cos(V_angle);
+  const float Vy = speed * sin(V_angle);
 
-  float psi_13 = (Vx - Vy) / h;
-  float psi_24 = -(Vx + Vy) / h;
+  const float psi_13 = (Vx - Vy) / h;
+  const float psi_24 = -(Vx + Vy) / h;
 
   const int motorSpeeds[4] = {
       rad2PWM(psi_13),
       rad2PWM(psi_24),
       rad2PWM(psi_13),
       rad2PWM(psi_24)};
+
   setMotorSpeeds(motorSpeeds);
 }

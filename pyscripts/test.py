@@ -1,122 +1,184 @@
-import serial
+import math
 import time
-import tkinter as tk
-from tkinter import ttk
+import serial
+import pygame
 
-robot = serial.Serial('COM9', 115200, timeout=1)
-time.sleep(2)
-
-window = tk.Tk()
-window.title("OmniRoy motor control")
-window.resizable(False, False)
-
-main_frame = ttk.Frame(window, padding=16)
-main_frame.grid()
-
-ttk.Label(main_frame, text="Motor speed (-255 to 255)").grid(
-    row=0, column=0, columnspan=2, pady=(0, 12)
-)
-
-sliders = []
-value_labels = []
-pending_commands = [None] * 4
+SERIAL_PORT = "COM9"
+BAUD_RATE = 115200
+DEADZONE = 0.15
+MIN_SPEED = -255.0
+MAX_SPEED = 255.0
+SEND_PERIOD = 0.05
 
 
-def send_speed(motor, value):
-    speed = int(float(value))
-    value_labels[motor].configure(text=str(speed))
-    command = f"{motor + 1},{speed}\n"
-    print(f"Sending command: {command.strip()}")
-    if robot is not None:
-        robot.write(command.encode("ascii"))
+def clamp(value, low, high):
+    return max(low, min(high, value))
 
 
-def schedule_speed(motor, value):
-    if pending_commands[motor] is not None:
-        window.after_cancel(pending_commands[motor])
+class RobotController:
+    def __init__(self, port_name):
+        self.port_name = port_name
+        self.serial_port = None
+        self.connected = False
+        self.last_sent_time = 0.0
+        self.last_command = "90.00,0.00"
 
-    speed = int(float(value))
-    value_labels[motor].configure(text=str(speed))
-    pending_commands[motor] = window.after(
-        80, lambda: send_scheduled_speed(motor, speed)
-    )
+        try:
+            self.serial_port = serial.Serial(port_name, BAUD_RATE, timeout=0.1)
+            time.sleep(2)
+            self.connected = True
+            print(f"Connected to {port_name}")
+        except serial.SerialException as exc:
+            print(f"Serial port {port_name} not available: {exc}")
+            self.connected = False
 
+    def send_command(self, angle_deg, speed_value, force=False):
+        angle_deg = float(angle_deg)
+        speed_value = clamp(float(speed_value), MIN_SPEED, MAX_SPEED)
 
-def send_scheduled_speed(motor, speed):
-    pending_commands[motor] = None
-    send_speed(motor, speed)
+        command = f"{angle_deg:.2f},{speed_value:.2f}\n"
+        now = time.monotonic()
 
+        if not force and (now - self.last_sent_time) < SEND_PERIOD:
+            return
 
-def set_slider_from_event(event, motor):
-    slider = sliders[motor]
-    start_x = slider.coords(255)[0]
-    end_x = slider.coords(-255)[0]
-    position = max(start_x, min(end_x, event.x))
-    value = round(255 - (position - start_x) * 510 / (end_x - start_x))
-    slider.set(value)
-    return "break"
+        if self.serial_port is not None and self.connected:
+            self.serial_port.write(command.encode("ascii"))
+            self.serial_port.flush()
 
+        self.last_sent_time = now
+        self.last_command = command
+        print(f"Send: {command.strip()}")
 
-def send_slider_value(event, motor):
-    if pending_commands[motor] is not None:
-        window.after_cancel(pending_commands[motor])
-        pending_commands[motor] = None
-    send_speed(motor, sliders[motor].get())
-
-
-def stop_all():
-    for motor, slider in enumerate(sliders):
-        if pending_commands[motor] is not None:
-            window.after_cancel(pending_commands[motor])
-            pending_commands[motor] = None
-        slider.set(0)
-        send_speed(motor, 0)
-
-
-def close_window():
-    stop_all()
-    if robot is not None:
-        robot.close()
-    window.destroy()
+    def stop(self):
+        self.send_command(90.0, 0.0, force=True)
+        if self.serial_port is not None and self.serial_port.is_open:
+            self.serial_port.close()
 
 
-for motor in range(4):
-    ttk.Label(main_frame, text=f"Motor {motor + 1}").grid(
-        row=motor + 1, column=0, sticky="w", padx=(0, 10)
-    )
+class VirtualJoystick:
+    def __init__(self, width=240, height=240, radius=90):
+        self.width = width
+        self.height = height
+        self.radius = radius
+        self.center_x = width // 2
+        self.center_y = height // 2
+        self.joy_x = 0.0
+        self.joy_y = 0.0
+        self.dragging = False
+        self.screen = None
 
-    slider = tk.Scale(
-        main_frame,
-        from_=255,
-        to=-255,
-        orient=tk.HORIZONTAL,
-        length=280,
-        resolution=1,
-        showvalue=False,
-        command=lambda value, index=motor: schedule_speed(index, value),
-    )
-    slider.grid(row=motor + 1, column=1)
-    slider.bind(
-        "<Button-1>",
-        lambda event, index=motor: set_slider_from_event(event, index),
-    )
-    slider.bind(
-        "<B1-Motion>",
-        lambda event, index=motor: set_slider_from_event(event, index),
-    )
-    slider.bind(
-        "<ButtonRelease-1>",
-        lambda event, index=motor: send_slider_value(event, index),
-    )
-    sliders.append(slider)
+    def setup_window(self):
+        pygame.init()
+        pygame.display.set_caption("OmniRoy virtual joystick")
+        self.screen = pygame.display.set_mode((self.width, self.height))
 
-    value_label = ttk.Label(main_frame, text="0", width=5, anchor="e")
-    value_label.grid(row=motor + 1, column=2, padx=(10, 0))
-    value_labels.append(value_label)
+    def update_from_mouse(self, pos):
+        dx = pos[0] - self.center_x
+        dy = pos[1] - self.center_y
+        length = math.hypot(dx, dy)
 
-ttk.Button(main_frame, text="Stop all", command=stop_all).grid(
-    row=5, column=0, columnspan=3, pady=(14, 0), sticky="ew"
-)
+        if length > self.radius:
+            scale = self.radius / length
+            dx *= scale
+            dy *= scale
 
-window.protocol("WM_DELETE_WINDOW", close_window)
-window.mainloop()
+        self.joy_x = dx / self.radius
+        self.joy_y = -dy / self.radius
+
+        if abs(self.joy_x) < DEADZONE:
+            self.joy_x = 0.0
+        if abs(self.joy_y) < DEADZONE:
+            self.joy_y = 0.0
+
+    def reset(self):
+        self.joy_x = 0.0
+        self.joy_y = 0.0
+        self.dragging = False
+
+    def draw(self):
+        if self.screen is None:
+            return
+
+        self.screen.fill((20, 20, 25))
+
+        base_rect = pygame.draw.circle(self.screen, (70, 70, 80), (self.center_x, self.center_y), self.radius, 3)
+        pygame.draw.circle(self.screen, (40, 180, 255), (self.center_x, self.center_y), 16)
+
+        stick_x = self.center_x + self.joy_x * self.radius
+        stick_y = self.center_y - self.joy_y * self.radius
+        pygame.draw.circle(self.screen, (255, 140, 60), (int(stick_x), int(stick_y)), 28)
+
+        pygame.display.flip()
+
+    def process_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            x, y = event.pos
+            dx = x - self.center_x
+            dy = y - self.center_y
+            if dx * dx + dy * dy <= self.radius * self.radius:
+                self.dragging = True
+                self.update_from_mouse(event.pos)
+
+        elif event.type == pygame.MOUSEMOTION and self.dragging:
+            self.update_from_mouse(event.pos)
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            self.reset()
+
+        return self.joy_x, self.joy_y
+
+
+class InputController:
+    def __init__(self):
+        self.virtual_joystick = VirtualJoystick()
+        self.virtual_joystick.setup_window()
+        self.clock = pygame.time.Clock()
+        self.last_sent_value = None
+
+    def update(self, robot):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    robot.send_command(90.0, 0.0, force=True)
+                    self.virtual_joystick.reset()
+            self.virtual_joystick.process_event(event)
+
+        x, y = self.virtual_joystick.joy_x, self.virtual_joystick.joy_y
+        if abs(x) < DEADZONE and abs(y) < DEADZONE:
+            current_value = (90.0, 0.0)
+        else:
+            angle = math.degrees(math.atan2(y, x))
+            speed = clamp(math.hypot(x, y) * 255.0, 0.0, 255.0)
+            current_value = (angle, speed)
+
+        if current_value != self.last_sent_value:
+            robot.send_command(current_value[0], current_value[1], force=True)
+            self.last_sent_value = current_value
+
+        self.virtual_joystick.draw()
+        return True
+
+    def tick(self):
+        self.clock.tick(60)
+
+
+def main():
+    robot = RobotController(SERIAL_PORT)
+    controller = InputController()
+
+    try:
+        while True:
+            if not controller.update(robot):
+                break
+            controller.tick()
+    finally:
+        robot.stop()
+        pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
+
