@@ -11,11 +11,13 @@
 
 constexpr uint8_t TPIN[] = {7, 5,
                             4, 3,
-                            12, 11,
-                            8, 9}; // D A B C
+                            11, 12,
+                            9, 8}; // D A B C
 
 constexpr float h = 0.0435f;
 constexpr float MAX_PSI = 20.0f;
+constexpr float MAX_SPEED = 0.5f;
+constexpr float SPEED_RAMP_RATE = 0.5f;
 constexpr uint16_t MOTOR_UPDATE_MS = 10U;
 constexpr uint16_t PWM_TIMER_COMPARE = 15U;
 constexpr uint16_t PWM_TIMER_PRESCALER = 64U;
@@ -28,6 +30,7 @@ volatile uint8_t pinD[] = {0, 0,
 volatile uint8_t pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 float speed = 0.0f;
+float currentSpeed = 0.0f;
 float angle = 90.0f;
 
 void setMotorSpeed(byte motor, int speed);
@@ -85,7 +88,9 @@ void loop()
   if (now - lastUpdate >= MOTOR_UPDATE_MS)
   {
     lastUpdate = now;
-    driveByAngle(radians(angle), speed);
+    const float maxSpeedStep = SPEED_RAMP_RATE * MOTOR_UPDATE_MS / 1000.0f;
+    currentSpeed += constrain(speed - currentSpeed, -maxSpeedStep, maxSpeedStep);
+    driveByAngle(radians(angle), currentSpeed);
   }
 
   static char data[32];
@@ -109,7 +114,7 @@ void loop()
           char *speedStr = comma + 1;
 
           angle = atof(angleStr);
-          speed = atof(speedStr);
+          speed = constrain(atof(speedStr), 0.0f, MAX_SPEED);
         }
 
         index = 0;

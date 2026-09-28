@@ -3,11 +3,12 @@ import time
 import serial
 import pygame
 
-SERIAL_PORT = "COM9"
+SERIAL_PORT = "COM8"
 BAUD_RATE = 115200
 DEADZONE = 0.15
-MIN_SPEED = -255.0
-MAX_SPEED = 255.0
+MIN_SPEED = 0
+MAX_SPEED = 0.5
+KEYBOARD_SPEED = 0.2
 SEND_PERIOD = 0.05
 
 
@@ -70,7 +71,7 @@ class VirtualJoystick:
 
     def setup_window(self):
         pygame.init()
-        pygame.display.set_caption("OmniRoy virtual joystick")
+        pygame.display.set_caption("OmniRoy: WASD / arrows, Space to stop")
         self.screen = pygame.display.set_mode((self.width, self.height))
 
     def update_from_mouse(self, pos):
@@ -146,13 +147,24 @@ class InputController:
                     self.virtual_joystick.reset()
             self.virtual_joystick.process_event(event)
 
-        x, y = self.virtual_joystick.joy_x, self.virtual_joystick.joy_y
-        if abs(x) < DEADZONE and abs(y) < DEADZONE:
+        keys = pygame.key.get_pressed()
+        x = float(keys[pygame.K_d] or keys[pygame.K_RIGHT]) - float(keys[pygame.K_a] or keys[pygame.K_LEFT])
+        y = float(keys[pygame.K_w] or keys[pygame.K_UP]) - float(keys[pygame.K_s] or keys[pygame.K_DOWN])
+
+        if keys[pygame.K_SPACE]:
             current_value = (90.0, 0.0)
+        elif x != 0.0 or y != 0.0:
+            length = math.hypot(x, y)
+            angle = math.degrees(math.atan2(y / length, x / length))
+            current_value = (angle, KEYBOARD_SPEED)
         else:
-            angle = math.degrees(math.atan2(y, x))
-            speed = clamp(math.hypot(x, y) * 255.0, 0.0, 255.0)
-            current_value = (angle, speed)
+            x, y = self.virtual_joystick.joy_x, self.virtual_joystick.joy_y
+            if abs(x) < DEADZONE and abs(y) < DEADZONE:
+                current_value = (90.0, 0.0)
+            else:
+                angle = math.degrees(math.atan2(y, x))
+                speed = clamp(math.hypot(x, y) * MAX_SPEED, MIN_SPEED, MAX_SPEED)
+                current_value = (angle, speed)
 
         if current_value != self.last_sent_value:
             robot.send_command(current_value[0], current_value[1], force=True)
