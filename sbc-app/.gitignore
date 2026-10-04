@@ -8,3 +8,5 @@ docs
 *.class
 *.log
 desktop.ini
+.pio
+.gitignore
