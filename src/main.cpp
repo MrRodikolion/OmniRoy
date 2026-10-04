@@ -3,24 +3,20 @@
 #include "avr/interrupt.h"
 #include "avr/io.h"
 
-// TODO
-/*
-Калибровочные коэфициенты для моторов и откалибровать мотры
-
-*/
-
 constexpr uint8_t TPIN[] = {7, 5,
                             4, 3,
                             11, 12,
                             9, 8}; // D A B C
+constexpr float KPIN[] = {0.956f,
+                          0.877f,
+                          0.904f,
+                          1.0f}; // D A B C
 
-constexpr float h = 0.0435f;
-constexpr float MAX_PSI = 20.0f;
-constexpr float MAX_SPEED = 0.5f;
-constexpr float SPEED_RAMP_RATE = 0.5f;
+constexpr float h = 0.48f;
+constexpr float MAX_PSI = 24.0f;
+constexpr float MAX_SPEED = 8.0f;
 constexpr uint16_t MOTOR_UPDATE_MS = 10U;
 constexpr uint16_t PWM_TIMER_COMPARE = 15U;
-constexpr uint16_t PWM_TIMER_PRESCALER = 64U;
 constexpr uint16_t PWM_MAX_VALUE = 255U;
 
 volatile uint8_t pinD[] = {0, 0,
@@ -30,7 +26,6 @@ volatile uint8_t pinD[] = {0, 0,
 volatile uint8_t pinC[] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 float speed = 0.0f;
-float currentSpeed = 0.0f;
 float angle = 90.0f;
 
 void setMotorSpeed(byte motor, int speed);
@@ -88,9 +83,7 @@ void loop()
   if (now - lastUpdate >= MOTOR_UPDATE_MS)
   {
     lastUpdate = now;
-    const float maxSpeedStep = SPEED_RAMP_RATE * MOTOR_UPDATE_MS / 1000.0f;
-    currentSpeed += constrain(speed - currentSpeed, -maxSpeedStep, maxSpeedStep);
-    driveByAngle(radians(angle), currentSpeed);
+    driveByAngle(radians(angle), speed);
   }
 
   static char data[32];
@@ -168,7 +161,7 @@ void setMotorSpeed(uint8_t motor, int speed)
   else if (speed < 0)
   {
     pinD[forwardChannel] = 0;
-    pinD[reverseChannel] = static_cast<uint8_t>(-speed);
+    pinD[reverseChannel] = -speed;
   }
   else
   {
@@ -197,7 +190,7 @@ void setMotorSpeeds(const int speeds[4])
     else if (value < 0)
     {
       pinD[forwardChannel] = 0;
-      pinD[reverseChannel] = static_cast<uint8_t>(-value);
+      pinD[reverseChannel] = -value;
     }
     else
     {
@@ -230,10 +223,10 @@ void driveByAngle(float V_angle, float speed)
   const float psi_24 = -(Vx + Vy) / h;
 
   const int motorSpeeds[4] = {
-      rad2PWM(psi_13),
-      rad2PWM(psi_24),
-      rad2PWM(psi_13),
-      rad2PWM(psi_24)};
+      static_cast<int>(roundf(rad2PWM(psi_13) * KPIN[0])),
+      static_cast<int>(roundf(rad2PWM(psi_24) * KPIN[1])),
+      static_cast<int>(roundf(rad2PWM(psi_13) * KPIN[2])),
+      static_cast<int>(roundf(rad2PWM(psi_24) * KPIN[3]))};
 
   setMotorSpeeds(motorSpeeds);
 }
