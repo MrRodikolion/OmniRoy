@@ -37,7 +37,13 @@ sbc-app/
 
 ## Current hardware contract
 
-The Nano firmware uses UART at `115200` baud. Its current input is one line in
-`angle,speed` format, for example `90.00,0.00`. The Java application does not
-open the serial port or send motion commands yet. The board model, Linux image,
-and serial-port library should be confirmed before that integration is added.
+The Nano firmware uses UART at `115200` baud and accepts one line in
+`angle,speed` format, for example `90.00,0.00`. The controller reads
+`serial.port` and `serial.baud-rate` from `application.properties`; override
+them with `-Dserial.port=...` and `-Dserial.baud-rate=...` when needed.
+
+In a graphical desktop session, use **W/S** to drive forward/backward and
+**A/D** to strafe left/right at the constant speed of `8.0`. Diagonal movement
+is supported; releasing all movement keys stops the robot. Commands are
+printed in the console. Serial port open/write/close calls in `Main` are
+commented out for console-only testing; uncomment them when connecting hardware.
