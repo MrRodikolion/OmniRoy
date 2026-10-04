@@ -1,0 +1,10 @@
+/target/
+/build/
+.venv/
+__pycache__/
+.vscode/
+.idea/
+docs
+*.class
+*.log
+desktop.ini
