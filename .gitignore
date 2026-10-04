@@ -17,4 +17,4 @@ docs
 *.class
 *.log
 desktop.ini
-
+**/desktop.ini
