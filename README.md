@@ -1,5 +1,9 @@
 # OmniRoy
 
+![Обложка проекта](docs/images/overview.png)
+
+*Концептуальная иллюстрация: изображение не является точной схемой или подтверждением аппаратной реализации.*
+
 OmniRoy is a four-wheel mecanum robot project. Firmware for the Arduino Nano
 and the Java application intended for the onboard single-board computer are
 kept as separate buildable projects.
